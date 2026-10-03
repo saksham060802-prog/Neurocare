@@ -33,6 +33,7 @@ async function startServer() {
       geminiConfigured: AIService.isConfigured(),
       azureConfigured: !!(process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_KEY !== ''),
       supabaseConfigured: isSupabaseConfigured(),
+      elevenLabsConfigured: !!(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_API_KEY.trim() !== ''),
     });
   });
 
@@ -44,6 +45,7 @@ async function startServer() {
       geminiConfigured: AIService.isConfigured(),
       azureConfigured: !!(process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_KEY !== ''),
       supabaseConfigured: isSupabaseConfigured(),
+      elevenLabsConfigured: !!(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_API_KEY.trim() !== ''),
     });
   });
 
@@ -115,6 +117,79 @@ async function startServer() {
     } catch (err: any) {
       console.warn('Translation error in /api/ai/translate:', err);
       res.json({ translatedText: req.body.text || '', error: err.message });
+    }
+  });
+
+  // ElevenLabs Text-To-Speech (TTS) Endpoint
+  const ttsRateLimitMap = new Map<string, number[]>();
+
+  app.post('/api/tts', async (req: Request, res: Response) => {
+    try {
+      const apiKey = process.env.ELEVENLABS_API_KEY;
+      if (!apiKey || apiKey.trim() === '') {
+        return res.status(503).json({ error: 'ElevenLabs TTS service unavailable' });
+      }
+
+      const { text } = req.body;
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        return res.status(400).json({ error: 'Valid text string is required' });
+      }
+
+      // Simple sliding-window rate limit per IP (max 15 requests per 60 seconds)
+      const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.ip || 'unknown';
+      const now = Date.now();
+      const userRequests = (ttsRateLimitMap.get(rawIp) || []).filter((t) => now - t < 60000);
+      if (userRequests.length >= 15) {
+        return res.status(429).json({ error: 'Rate limit exceeded for TTS. Please try again later.' });
+      }
+      userRequests.push(now);
+      ttsRateLimitMap.set(rawIp, userRequests);
+
+      // Clean markdown formatting & emojis, cap at 800 chars
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/[#*_~>|-]/g, ' ')
+        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 800);
+
+      if (!cleanText) {
+        return res.status(400).json({ error: 'Text contains no speakable characters' });
+      }
+
+      const defaultVoiceId = '21m00Tcm4TlvDq8ikWAM';
+      const voiceId = (process.env.ELEVENLABS_VOICE_ID && process.env.ELEVENLABS_VOICE_ID.trim())
+        ? process.env.ELEVENLABS_VOICE_ID.trim()
+        : defaultVoiceId;
+
+      const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey.trim(),
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg',
+        },
+        body: JSON.stringify({
+          text: cleanText,
+          model_id: 'eleven_multilingual_v2',
+        }),
+      });
+
+      if (!elevenRes.ok) {
+        console.error('[ElevenLabs TTS] Upstream error status:', elevenRes.status);
+        return res.status(503).json({ error: 'ElevenLabs TTS service unavailable' });
+      }
+
+      const audioBuffer = await elevenRes.arrayBuffer();
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', audioBuffer.byteLength.toString());
+      res.send(Buffer.from(audioBuffer));
+    } catch (err: any) {
+      console.error('[ElevenLabs TTS] Exception:', err?.message || err);
+      res.status(503).json({ error: 'ElevenLabs TTS service unavailable' });
     }
   });
 

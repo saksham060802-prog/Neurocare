@@ -10,7 +10,7 @@ Cognitive Companion is a full-stack web application designed to support seniors 
 - 📖 **RAG Long-Term Personal Memory Bank**: Automatically extracts personal facts (family connections, health preferences, daily routines) from chat and retrieves them semantically when asked.
 - 🎯 **Adaptive Cognitive Exercises**: Brain exercises spanning Memory, Attention, Reasoning, Pattern Recognition, and Language with auto-calibrating difficulty (`EASY`, `MEDIUM`, `HARD`).
 - ⏰ **Task & Reminder System**: Natural language reminder creation from chat or manual task creation for medication and daily routines.
-- 🎤 **Voice Interaction**: Built-in voice input and speech synthesis via Web Speech API and Gemini text-to-speech.
+- 🎤 **Voice Interaction & Natural ElevenLabs TTS**: Built-in voice input and natural AI text-to-speech powered by ElevenLabs (`eleven_multilingual_v2`), with browser Web Speech API fallback.
 - 🛡️ **Caregiver Portal**: Privacy-aware dashboard for family members and caregivers to monitor exercise scores and task completion without invading private conversation privacy.
 - ♿ **Senior-Friendly Accessibility**: High-contrast mode, scalable text size, large touch targets (44px+), and clean non-cluttered layouts.
 
@@ -22,7 +22,7 @@ Cognitive Companion is a full-stack web application designed to support seniors 
 - **Backend**: Express (Node.js) on Port 3000
 - **AI Engine**: `@google/genai` (`gemini-3.7-flash` & `gemini-embedding-2-preview`)
 - **Database**: Local JSON persistence + Supabase PostgreSQL Migration schema (`supabase_schema.sql`)
-- **Voice**: Web Speech API / Azure Speech SDK fallback
+- **Voice & TTS**: ElevenLabs Multilingual v2 API with browser Web Speech API fallback
 
 ---
 
@@ -37,6 +37,8 @@ Cognitive Companion is a full-stack web application designed to support seniors 
    Copy `.env.example` and set your API keys:
    ```bash
    GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+   ELEVENLABS_API_KEY="YOUR_ELEVENLABS_API_KEY"
+   ELEVENLABS_VOICE_ID="YOUR_ELEVENLABS_VOICE_ID"
    ```
 
 3. **Start Development Server**:

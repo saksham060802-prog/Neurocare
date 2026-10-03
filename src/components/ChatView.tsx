@@ -10,12 +10,12 @@ import {
   CheckSquare,
   Trash2,
   Brain,
-  Calendar,
-  PhoneCall,
-  Pill,
+  Square,
+  Radio,
 } from 'lucide-react';
 import { ChatMessage, UserProfile } from '../types';
 import { voiceController } from '../lib/voice';
+import { ttsService, TTSState } from '../lib/ttsService';
 import { useLanguage } from '../context/LanguageContext';
 
 interface ChatViewProps {
@@ -33,13 +33,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onClearHistory,
   isLoading,
 }) => {
-  const { currentLanguage, languageCode, speechLocale, t } = useLanguage();
+  const { currentLanguage, speechLocale, t } = useLanguage();
 
   const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [autoSpeak, setAutoSpeak] = useState(true);
-  const [currentlySpeakingId, setCurrentlySpeakingId] = useState<string | null>(null);
+  const [ttsState, setTtsState] = useState<TTSState>({
+    isSpeaking: false,
+    isFetching: false,
+    currentId: null,
+    isEnabled: ttsService.getIsEnabled(),
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastSpokenMessageIdRef = useRef<string | null>(null);
 
   const quickPrompts = [
     { label: t('quick_medicine', 'Medicine Reminder'), prompt: 'Remind me to take my morning medicine.' },
@@ -48,24 +53,40 @@ export const ChatView: React.FC<ChatViewProps> = ({
     { label: t('ask_about_family', "My Daughter's Name"), prompt: 'What is my daughter’s name?' },
   ];
 
+  // Subscribe to TTS Service state changes
+  useEffect(() => {
+    const unsubscribe = ttsService.subscribe((state) => {
+      setTtsState(state);
+    });
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // Handle auto-speech synthesis for latest assistant message in target speech locale
+  // Handle auto ElevenLabs TTS for newly arrived assistant message
   useEffect(() => {
-    if (autoSpeak && messages.length > 0) {
+    if (ttsState.isEnabled && messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
-      if (lastMsg.role === 'assistant' && lastMsg.id !== currentlySpeakingId) {
-        setCurrentlySpeakingId(lastMsg.id);
-        voiceController.speak(lastMsg.content, () => setCurrentlySpeakingId(null), speechLocale);
+      if (
+        lastMsg.role === 'assistant' &&
+        lastMsg.id &&
+        lastMsg.id !== lastSpokenMessageIdRef.current
+      ) {
+        lastSpokenMessageIdRef.current = lastMsg.id;
+        ttsService.speakText(lastMsg.content, lastMsg.id, speechLocale);
       }
     }
-  }, [messages, autoSpeak, speechLocale]);
+  }, [messages, ttsState.isEnabled, speechLocale]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputText.trim() || isLoading) return;
+
+    // Unlock audio context during user click/submit gesture
+    ttsService.unlockAudio();
+    ttsService.stop();
 
     const textToSend = inputText;
     setInputText('');
@@ -74,10 +95,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const handleQuickPromptClick = async (promptText: string) => {
     if (isLoading) return;
+
+    // Unlock audio context during user click gesture
+    ttsService.unlockAudio();
+    ttsService.stop();
+
     await onSendMessage(promptText, currentLanguage.name, currentLanguage.code);
   };
 
   const toggleMic = () => {
+    ttsService.unlockAudio();
+    ttsService.stop();
+
     if (isRecording) {
       voiceController.stopListening();
       setIsRecording(false);
@@ -102,13 +131,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const handleSpeakMessage = (msg: ChatMessage) => {
-    if (voiceController.getIsSpeaking()) {
-      voiceController.stopSpeaking();
-      setCurrentlySpeakingId(null);
+    ttsService.unlockAudio();
+    if (ttsState.isSpeaking && ttsState.currentId === msg.id) {
+      ttsService.stop();
     } else {
-      setCurrentlySpeakingId(msg.id);
-      voiceController.speak(msg.content, () => setCurrentlySpeakingId(null), speechLocale);
+      ttsService.speakText(msg.content, msg.id, speechLocale);
     }
+  };
+
+  const toggleSpokenReplies = () => {
+    const nextState = !ttsState.isEnabled;
+    ttsService.setIsEnabled(nextState);
   };
 
   return (
@@ -135,30 +168,26 @@ export const ChatView: React.FC<ChatViewProps> = ({
         </div>
 
         <div className="flex items-center space-x-2">
-          {/* Audio read-aloud toggle */}
+          {/* Spoken Replies Toggle Button (Large Touch Target 44px+) */}
           <button
-            onClick={() => {
-              const next = !autoSpeak;
-              setAutoSpeak(next);
-              if (!next) voiceController.stopSpeaking();
-            }}
-            title={autoSpeak ? 'Voice Feedback On' : 'Voice Feedback Off'}
-            aria-label="Toggle Voice Feedback"
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all min-h-[42px] border ${
-              autoSpeak
+            onClick={toggleSpokenReplies}
+            title={ttsState.isEnabled ? 'Spoken Replies On' : 'Spoken Replies Off'}
+            aria-label="Toggle Spoken Replies"
+            className={`min-h-[44px] min-w-[44px] px-3.5 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition-all border ${
+              ttsState.isEnabled
                 ? 'bg-[#18181B] text-white border-[#18181B]'
                 : 'bg-white text-[#374151] border-[#E5E7EB] hover:bg-gray-50'
             }`}
           >
-            {autoSpeak ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-            <span className="hidden sm:inline">{autoSpeak ? 'Voice On' : 'Voice Off'}</span>
+            {ttsState.isEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-gray-400" />}
+            <span className="hidden sm:inline">{ttsState.isEnabled ? 'Voice On' : 'Voice Off'}</span>
           </button>
 
           <button
             onClick={onClearHistory}
             title={t('clear_history', 'Clear Chat History')}
             aria-label="Clear Chat History"
-            className="p-2.5 rounded-xl text-[#374151] hover:bg-gray-100 border border-[#E5E7EB] transition-all min-h-[42px] min-w-[42px] flex items-center justify-center font-bold"
+            className="p-2.5 rounded-xl text-[#374151] hover:bg-gray-100 border border-[#E5E7EB] transition-all min-h-[44px] min-w-[44px] flex items-center justify-center font-bold"
           >
             <Trash2 className="w-4.5 h-4.5" />
           </button>
@@ -192,7 +221,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
           </button>
         </div>
 
-        {/* Clear status text below microphone */}
+        {/* Clear status text & Speaking State indicator */}
         <div className="space-y-1">
           <p className="text-lg font-bold text-[#111827]">
             {isRecording ? t('listening_speak_now', 'Listening... Speak Now') : t('tap_to_speak', 'Tap to Speak')}
@@ -203,6 +232,33 @@ export const ChatView: React.FC<ChatViewProps> = ({
               : `${t('ai_companion_subtitle', 'Hands-free voice assistant in')} ${currentLanguage.nativeName}`}
           </p>
         </div>
+
+        {/* Active Speech / Generating Voice Indicator with Stop Button */}
+        {(ttsState.isFetching || ttsState.isSpeaking) && (
+          <div className="inline-flex items-center space-x-3 px-4 py-2 rounded-full bg-emerald-50 text-emerald-900 border border-emerald-200 text-xs font-bold animate-pulse shadow-xs">
+            <span className="flex items-center gap-1.5">
+              {ttsState.isFetching ? (
+                <>
+                  <Sparkles className="w-4 h-4 text-emerald-600 animate-spin" />
+                  <span>Generating voice...</span>
+                </>
+              ) : (
+                <>
+                  <Radio className="w-4 h-4 text-emerald-600 animate-pulse" />
+                  <span>Speaking...</span>
+                </>
+              )}
+            </span>
+            <button
+              onClick={() => ttsService.stop()}
+              aria-label="Stop Speaking"
+              className="px-2 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-md flex items-center gap-1 text-[11px] font-bold min-h-[32px]"
+            >
+              <Square className="w-3 h-3 fill-current" />
+              <span>Stop</span>
+            </button>
+          </div>
+        )}
       </section>
 
       {/* 3. Central Conversation / Memory Stream Container */}
@@ -277,9 +333,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   {!isUser && (
                     <button
                       onClick={() => handleSpeakMessage(msg)}
-                      className="text-[#18181B] font-bold hover:underline px-1.5 py-0.5 rounded"
+                      aria-label={ttsState.isSpeaking && ttsState.currentId === msg.id ? 'Stop Speech' : 'Listen to Message'}
+                      className="text-[#18181B] font-bold hover:underline px-2 py-1 rounded flex items-center gap-1 min-h-[32px]"
                     >
-                      {currentlySpeakingId === msg.id ? 'Stop Speech' : 'Listen'}
+                      {ttsState.isSpeaking && ttsState.currentId === msg.id ? (
+                        <>
+                          <Square className="w-3 h-3 text-rose-600 fill-current" />
+                          <span className="text-rose-600">Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-3.5 h-3.5" />
+                          <span>Listen</span>
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
@@ -305,7 +372,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <button
               key={idx}
               onClick={() => handleQuickPromptClick(item.prompt)}
-              className="px-3.5 py-2 rounded-xl bg-[#F9FAFB] text-xs text-[#374151] font-bold border border-[#E5E7EB] hover:border-[#18181B] hover:text-[#111827] transition-all whitespace-nowrap"
+              className="px-3.5 py-2 rounded-xl bg-[#F9FAFB] text-xs text-[#374151] font-bold border border-[#E5E7EB] hover:border-[#18181B] hover:text-[#111827] transition-all whitespace-nowrap min-h-[40px]"
             >
               {item.label}
             </button>

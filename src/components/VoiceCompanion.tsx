@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mic, MicOff, Volume2, VolumeX, Sparkles, Brain, Radio, ArrowRight } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { voiceController } from '../lib/voice';
+import { ttsService } from '../lib/ttsService';
 
 interface VoiceCompanionProps {
   onSendMessage?: (text: string, language?: string, languageCode?: string) => Promise<void>;
@@ -26,19 +27,20 @@ export const VoiceCompanion: React.FC<VoiceCompanionProps> = ({
   // Cleanup speech synthesis on unmount
   useEffect(() => {
     return () => {
-      voiceController.stopSpeaking();
+      ttsService.stop();
       voiceController.stopListening();
     };
   }, []);
 
   const handleStartListening = () => {
+    ttsService.unlockAudio();
     if (isListening) {
       voiceController.stopListening();
       setIsListening(false);
       return;
     }
 
-    voiceController.stopSpeaking();
+    ttsService.stop();
     setIsSpeaking(false);
     setIsListening(true);
     setLastTranscript('');
@@ -74,7 +76,7 @@ export const VoiceCompanion: React.FC<VoiceCompanionProps> = ({
                 const data = await res.json();
                 const replyText = data.response || data.reply || 'I am here with you.';
                 setLastResponse(replyText);
-                // Immediate Speech Synthesis (TTS)
+                // Immediate ElevenLabs TTS
                 triggerImmediateTTS(replyText);
               }
             }
@@ -103,17 +105,18 @@ export const VoiceCompanion: React.FC<VoiceCompanionProps> = ({
   const triggerImmediateTTS = (text: string) => {
     if (!text) return;
     setIsSpeaking(true);
-    voiceController.speak(
+    ttsService.speakText(
       text,
+      undefined,
+      speechLocale,
       () => {
         setIsSpeaking(false);
-      },
-      speechLocale
+      }
     );
   };
 
   const handleStopSpeaking = () => {
-    voiceController.stopSpeaking();
+    ttsService.stop();
     setIsSpeaking(false);
   };
 
@@ -162,9 +165,10 @@ export const VoiceCompanion: React.FC<VoiceCompanionProps> = ({
       {/* Main Interactive Mic Button */}
       <div className="text-center py-6 space-y-4">
         <button
-          onClick={handleStartListening}
+          onClick={isSpeaking ? handleStopSpeaking : handleStartListening}
           disabled={isProcessing}
           id="voice-companion-mic-btn"
+          aria-label={isSpeaking ? 'Stop Speaking' : isListening ? 'Stop Listening' : 'Start Listening'}
           className={`w-24 h-24 sm:w-28 sm:h-28 rounded-full mx-auto flex items-center justify-center transition-all transform active:scale-95 shadow-md ${
             isListening
               ? 'bg-rose-600 text-white ring-8 ring-rose-100 animate-pulse'
@@ -187,7 +191,7 @@ export const VoiceCompanion: React.FC<VoiceCompanionProps> = ({
             {isListening
               ? `${t('listening_speak_now', 'Listening... Speak now')} (${currentLanguage.nativeName})`
               : isSpeaking
-              ? 'Speaking response...'
+              ? 'Speaking response (tap to stop)...'
               : isProcessing
               ? 'Processing speech turn...'
               : t('tap_to_speak', 'Tap to Speak')}
@@ -217,6 +221,7 @@ export const VoiceCompanion: React.FC<VoiceCompanionProps> = ({
                 onClick={() => triggerImmediateTTS(lastResponse)}
                 className="p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shrink-0"
                 title="Replay Voice"
+                aria-label="Replay Voice"
               >
                 <Volume2 className="w-4 h-4" />
               </button>
@@ -240,12 +245,13 @@ export const VoiceCompanion: React.FC<VoiceCompanionProps> = ({
             <button
               key={idx}
               onClick={() => {
+                ttsService.unlockAudio();
                 setLastTranscript(prompt);
                 if (onSendMessage) {
                   onSendMessage(prompt, activeLangName, activeLangCode);
                 }
               }}
-              className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-800 flex items-center space-x-1 transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-gray-800 flex items-center space-x-1 transition-colors min-h-[36px]"
             >
               <span>{prompt}</span>
               <ArrowRight className="w-3 h-3 text-gray-500" />
