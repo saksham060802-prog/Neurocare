@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // User Profile Validation
+    function isValidProfile(data) {
+      return data.keys().hasAll(['userId', 'name', 'preferredLanguage'])
+        && data.userId is string && data.userId.size() <= 128
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.preferredLanguage is string && data.preferredLanguage.size() <= 50;
+    }
+
+    match /profiles/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidProfile(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if isOwner(userId) && isValidProfile(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isOwner(userId);
+    }
+
+    // Task Validation
+    function isValidTask(data) {
+      return data.keys().hasAll(['userId', 'title', 'dueAt', 'status'])
+        && data.userId is string && data.userId.size() <= 128
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.dueAt is string && data.dueAt.size() <= 100
+        && data.status in ['pending', 'completed'];
+    }
+
+    match /tasks/{taskId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidTask(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && isValidTask(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Photo Memory Validation
+    function isValidPhotoMemory(data) {
+      return data.keys().hasAll(['userId', 'photoUrl', 'title', 'relationTag', 'uploadedBy'])
+        && data.userId is string && data.userId.size() <= 128
+        && data.photoUrl is string && data.photoUrl.size() <= 1000
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.relationTag is string && data.relationTag.size() <= 100
+        && data.uploadedBy in ['elder', 'caregiver'];
+    }
+
+    match /photoMemories/{photoId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidPhotoMemory(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && isValidPhotoMemory(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Call Log Validation
+    function isValidCallLog(data) {
+      return data.keys().hasAll(['userId', 'callerName', 'status', 'scheduledTime'])
+        && data.userId is string && data.userId.size() <= 128
+        && data.callerName is string && data.callerName.size() <= 100
+        && data.status in ['answered', 'missed', 'declined']
+        && data.scheduledTime is string && data.scheduledTime.size() <= 100;
+    }
+
+    match /callLogs/{logId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidCallLog(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && isValidCallLog(incoming()) && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+  }
+}

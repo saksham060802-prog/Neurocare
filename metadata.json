@@ -1,0 +1,10 @@
+{
+  "name": "NeuroCare",
+  "description": "AI-powered cognitive companion providing personalized memory support, cognitive training exercises, voice assistance, task reminders, and caregiver insights.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

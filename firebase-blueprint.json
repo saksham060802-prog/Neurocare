@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Elder user profile and preferences",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner UID" },
+        "name": { "type": "string", "maxLength": 100 },
+        "ageRange": { "type": "string", "maxLength": 50 },
+        "preferredLanguage": { "type": "string", "maxLength": 50 },
+        "emergencyContact": { "type": "string", "maxLength": 100 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "fontSize": { "type": "string", "enum": ["normal", "large", "extra-large"] },
+        "highContrast": { "type": "boolean" },
+        "voiceEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "name", "preferredLanguage"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Daily reminders and medication tasks",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "dueAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed"] },
+        "category": { "type": "string", "enum": ["health", "social", "personal", "general"] },
+        "createdAt": { "type": "string" },
+        "googleEventId": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["userId", "title", "dueAt", "status"]
+    },
+    "PhotoMemory": {
+      "title": "PhotoMemory",
+      "description": "Family nostalgia memory vault photos",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "photoUrl": { "type": "string", "maxLength": 1000 },
+        "title": { "type": "string", "maxLength": 200 },
+        "relationTag": { "type": "string", "maxLength": 100 },
+        "location": { "type": "string", "maxLength": 200 },
+        "date": { "type": "string", "maxLength": 100 },
+        "contextHint": { "type": "string", "maxLength": 500 },
+        "uploadedBy": { "type": "string", "enum": ["elder", "caregiver"] },
+        "voiceNote": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "photoUrl", "title", "relationTag", "uploadedBy"]
+    },
+    "CallLog": {
+      "title": "CallLog",
+      "description": "Voice check-in and SOS emergency call logs",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "callerName": { "type": "string", "maxLength": 100 },
+        "callerRole": { "type": "string", "enum": ["Caregiver", "Doctor", "AI Voice Companion"] },
+        "callType": { "type": "string", "enum": ["medication", "routine_walk", "cognitive_checkin", "emergency"] },
+        "status": { "type": "string", "enum": ["answered", "missed", "declined"] },
+        "scheduledTime": { "type": "string" },
+        "locationName": { "type": "string", "maxLength": 200 }
+      },
+      "required": ["userId", "callerName", "status", "scheduledTime"]
+    }
+  },
+  "firestore": {
+    "/profiles/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile document indexed by auth UID"
+    },
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Individual task documents"
+    },
+    "/photoMemories/{photoId}": {
+      "schema": { "$ref": "#/entities/PhotoMemory" },
+      "description": "Photo recall memory vault documents"
+    },
+    "/callLogs/{logId}": {
+      "schema": { "$ref": "#/entities/CallLog" },
+      "description": "Call and emergency check-in log history"
+    }
+  }
+}
